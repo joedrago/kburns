@@ -91,21 +91,25 @@ end
 
 output_ratio = options.output_width.to_f / options.output_height.to_f
 
-slides = input_files.map do |file|
+slides = []
+input_files.each do |file|
   size = FastImage.size(file)
+  if size == nil
+    next
+  end
   ratio = size[0].to_f / size[1].to_f
-  {
+  slides.push({
     file: file,
     width: size[0],
     height: size[1],
     direction_x: x_directions.sample,
     direction_y: y_directions.sample,
     direction_z: z_directions.sample,
-    scale: options.scale_mode == :auto ?
+    scale: options.scale_mode == :auto ? 
       ((ratio - output_ratio).abs > 0.5 ? :pad : :crop_center)
     :
       options.scale_mode
-  }
+  })
 end
 if options.loopable
   slides << slides[0]
@@ -255,11 +259,11 @@ end
 
 # Dump filterchain for debugging
 if options.dump_filter_graph
-  filters = filter_chains.map do |f|
-    f.gsub(/^\[(\d+):v\]/) do |m|
+  filters = filter_chains.map do |f| 
+    f.gsub(/^\[(\d+):v\]/) do |m| 
       slide = slides[$1.to_i]
       "nullsrc=s=#{slide[:width]}x#{slide[:height]}:r=25:sar=300/300:d=0.04,format=yuvj422p,"
-    end.gsub(/\[out\]$/, ",nullsink")
+    end.gsub(/\[out\]$/, ",nullsink") 
   end.join(";")
   tmp = Tempfile.new('filtergraph.dot')
   tmp.close
@@ -274,7 +278,7 @@ end
 
 # Run ffmpeg
 cmd = [
-  "ffmpeg", "-y", "-hide_banner", *options.y ? ["-y"] : [],
+  "ffmpeg", "-y", "-hide_banner", *options.y ? ["-y"] : [], 
   *slides.map { |s| ["-i", s[:file]] }.flatten,
   *options.audio ? ["-i", options.audio] : [],
   "-filter_complex", filter_chains.join(";"),
@@ -284,7 +288,7 @@ cmd = [
   ] : [
     "-t", ((options.slide_duration_s-options.fade_duration_s)*slides.count+options.fade_duration_s).to_s
   ]),
-  "-map", "[out]",
+  "-map", "[out]", 
   *(options.audio ? ["-map", "#{slides.count}:a"] : []),
   "-c:v", "libx264", output_file
 ]
