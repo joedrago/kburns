@@ -22,6 +22,7 @@ options.scale_mode = :auto
 options.dump_filter_graph = false
 options.loopable = false
 options.audio = nil
+options.overlay = nil
 OptionParser.new do |opts|
   opts.banner = "Usage: #{$PROGRAM_NAME} [options] input1 [input2...] output"
   opts.on("-h", "--help", "Prints this help") do
@@ -60,6 +61,9 @@ OptionParser.new do |opts|
   opts.on("--audio=[FILE]", "Use FILE as audio track") do |f|
     options.audio = f
   end
+  opts.on("--overlay=[FILE]", "Use FILE as overlay") do |f|
+    options.overlay = f
+  end
   opts.on("-y", "Overwrite output file without asking") do
     options.y = true
   end
@@ -97,7 +101,7 @@ slides = input_files.map do |file|
     direction_x: x_directions.sample,
     direction_y: y_directions.sample,
     direction_z: z_directions.sample,
-    scale: options.scale_mode == :auto ? 
+    scale: options.scale_mode == :auto ?
       ((ratio - output_ratio).abs > 0.5 ? :pad : :crop_center)
     :
       options.scale_mode
@@ -238,17 +242,24 @@ filter_chains += slides.each_with_index.map do |slide, i|
   input_1 = i > 0 ? "ov#{i-1}" : "black"
   input_2 = "v#{i}"
   output = i == slides.count - 1 ? "out" : "ov#{i}"
+  if (output == "out") and options.overlay
+    output = "out2"
+  end
   overlay_filter = "overlay" + (i == slides.count - 1 ? "=format=yuv420" : "")
   "[#{input_1}][#{input_2}]#{overlay_filter}[#{output}]"
 end
 
+if options.overlay
+  filter_chains.push("movie=#{options.overlay} [logo]; [out2][logo] overlay=(W-w)/2:(H-h)/2 [out]")
+end
+
 # Dump filterchain for debugging
 if options.dump_filter_graph
-  filters = filter_chains.map do |f| 
-    f.gsub(/^\[(\d+):v\]/) do |m| 
+  filters = filter_chains.map do |f|
+    f.gsub(/^\[(\d+):v\]/) do |m|
       slide = slides[$1.to_i]
       "nullsrc=s=#{slide[:width]}x#{slide[:height]}:r=25:sar=300/300:d=0.04,format=yuvj422p,"
-    end.gsub(/\[out\]$/, ",nullsink") 
+    end.gsub(/\[out\]$/, ",nullsink")
   end.join(";")
   tmp = Tempfile.new('filtergraph.dot')
   tmp.close
@@ -263,7 +274,7 @@ end
 
 # Run ffmpeg
 cmd = [
-  "ffmpeg", "-hide_banner", *options.y ? ["-y"] : [], 
+  "ffmpeg", "-y", "-hide_banner", *options.y ? ["-y"] : [],
   *slides.map { |s| ["-i", s[:file]] }.flatten,
   *options.audio ? ["-i", options.audio] : [],
   "-filter_complex", filter_chains.join(";"),
@@ -273,7 +284,7 @@ cmd = [
   ] : [
     "-t", ((options.slide_duration_s-options.fade_duration_s)*slides.count+options.fade_duration_s).to_s
   ]),
-  "-map", "[out]", 
+  "-map", "[out]",
   *(options.audio ? ["-map", "#{slides.count}:a"] : []),
   "-c:v", "libx264", output_file
 ]
